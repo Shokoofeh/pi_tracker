@@ -44,7 +44,8 @@ namespace skeleton_tracker
 	    int rate;
 	    n.param("tracking_rate", rate, 1);
 	    n.param("fixed_frame", fixed_frame, std::string("openni_depth_frame"));
-        skeleton_pub_ = n.advertise<pi_tracker::Skeleton>("/skeleton", rate);
+	    skeleton_pub_ = n.advertise<pi_tracker::Skeleton>("/skeleton", rate);
+	    user_pub = n.advertise<pi_tracker::Skeleton> ("user", rate);
       }
       
       void publishTransform(KinectController &kinect_controller, XnUserID const &user, XnSkeletonJoint const &joint, string const &frame_id, string const &child_frame_id, pi_tracker::Skeleton &skeleton)
@@ -97,11 +98,37 @@ namespace skeleton_tracker
         XnUserID users[15];
         XnUInt16 users_count = 15;
         xn::UserGenerator& UserGenerator = kinect_controller.getUserGenerator();
+	// My Edit -1
+        xn::DepthGenerator& DepthGenerator = kinect_controller.getDepthGenerator();
+        // My Edit -1
         UserGenerator.GetUsers(users, users_count);
-	    pi_tracker::Skeleton g_skel;
+	pi_tracker::Skeleton g_skel, g_user;
 
         for (int i = 0; i < users_count; ++i)
         {
+          XnUserID user = users[i];
+	  // %TAag(MyEdit)%
+          XnPoint3D com;
+          UserGenerator.GetCoM(user, com);
+          DepthGenerator.ConvertRealWorldToProjective(1, &com, &com);
+          ROS_INFO("New User %d at x:%f   y:%f   z:%f", user, com.X, com.Y, com.Z);
+          g_user.user_id = user;
+          g_user.header.stamp = ros::Time::now();
+          g_user.header.frame_id = fixed_frame;
+          geometry_msgs::Vector3 userPosition;
+          userPosition.x = com.X;
+          userPosition.y = com.Y;
+          userPosition.z = com.Z;
+          g_user.position.push_back(userPosition);
+          char buffer [20];
+          int user_str;
+          user_str = sprintf(buffer, "com_%d", user);
+          g_user.name.push_back(buffer);
+        }
+        user_pub.publish(g_user);
+	
+ 	for (int i = 0; i < users_count; ++i)
+	{
           XnUserID user = users[i];
           if (!UserGenerator.GetSkeletonCap().IsTracking(user))
             continue;
@@ -136,6 +163,7 @@ namespace skeleton_tracker
          
   private:
     ros::Publisher  skeleton_pub_;    
+    ros::Publisher user_pub;
   };
 
 }
